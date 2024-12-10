@@ -12,6 +12,11 @@ def read_pascal_str(file) -> str:
 		c = bytes(file.read(1))
 		ret += c
 	return str(ret)[2:-1]
+
+def write_pascal_str(file, string):
+	leng = len(string)
+	file.write(struct.pack(">i", leng))
+	[file.write(struct.pack("c", bytes(c, "ascii"))) for c in string]
 	
 @dataclass
 class Sphere:
@@ -19,6 +24,16 @@ class Sphere:
 	y: float
 	z: float
 	r: float
+
+	@property
+	def as_tup(self) -> (float,float,float,float):
+		return (self.x ,self.y ,self.z ,self.r)
+
+	def read(self, file):
+		self = Sphere(*struct.unpack(">4f", file.read(16)))
+
+	def write(self, file):
+		file.write(struct.pack(">4f", *self.as_tup))
 
 @dataclass
 class Xfm:
@@ -32,6 +47,10 @@ class Xfm:
 	def read(self, file):
 		self.mtx = struct.unpack(">9f", file.read(9 * 4))
 		self.pos = struct.unpack(">3f", file.read(3 * 4))
+
+	def write(self, file):
+		file.write(struct.pack(">9f", *self.mtx))
+		file.write(struct.pack(">3f", *self.pos))
 
 @dataclass
 class Vertex:
@@ -56,7 +75,6 @@ class Vertex:
 	bone_3: int
 
 	def read(self, file):
-		import sys
 		self.x, self.y, self.z = struct.unpack(">3f", file.read(12))
 		# note: assumes non-UI mesh!!!
 		assert struct.unpack(">i", file.read(4)) != -1
@@ -90,6 +108,9 @@ class Face:
 	def read(self, file):
 		self.i0, self.i1, self.i2 = struct.unpack(">3H", file.read(6))
 
+	def write(self, file):
+		file.write(struct.pack(">3H", self.i0, self.i1, self.i2))
+
 @dataclass
 class Bone:
 	name: str
@@ -98,6 +119,10 @@ class Bone:
 	def read(self, file):
 		self.name = read_pascal_str(file)
 		self.xfm.read(file)
+
+	def write(self, file):
+		write_pascal_str(file, self.name)
+		self.xfm.write(file)
 
 @dataclass
 class Mesh:
@@ -177,6 +202,42 @@ class Mesh:
 		self.keep_data = struct.unpack("?", file.read(1))[0]
 		self.does_ao = struct.unpack("?", file.read(1))[0]
 
+	def write(self, file):
+		file.write(struct.pack(">i", self.version))
+		file.write(struct.pack(">i", self.obj_ver))
+		write_pascal_str(file, self.milotype)
+		file.write(struct.pack("?", self.has_typeprops))
+		write_pascal_str(file, self.note)
+		file.write(struct.pack(">i", self.trans_ver))
+		self.local.write(file)
+		self.world.write(file)
+		file.write(struct.pack(">i", self.constraint))
+		write_pascal_str(file, self.target)
+		file.write(struct.pack("?", self.preserve_scale))
+		write_pascal_str(file, self.parent)
+		file.write(struct.pack(">i", self.draw_ver))
+		file.write(struct.pack("?", self.showing))
+		self.bound.write(file)
+		file.write(struct.pack(">f", self.z_order))
+		write_pascal_str(file, self.material)
+		write_pascal_str(file, self.geom_owner)
+		file.write(struct.pack(">i", self.mutable))
+		file.write(struct.pack(">i", self.volume))
+		file.write(struct.pack("?", self.is_bsp))
+		file.write(struct.pack(">i", self.vert_ct))
+		file.write(struct.pack("?", self.is_ng))
+		file.write(struct.pack(">i", self.vert_size))
+		file.write(struct.pack(">i", self.something))
+		[v.write(file) for v in self.verts]
+		file.write(struct.pack(">i", self.face_ct))
+		[f.write(file) for f in self.faces]
+		file.write(struct.pack(">i", self.group_size_ct))
+		[file.write(struct.pack(">B", g)) for g in self.group_sizes]
+		file.write(struct.pack(">i", self.bone_ct))
+		[b.write(file) for b in self.bones]
+		file.write(struct.pack("?", self.keep_data))
+		file.write(struct.pack("?", self.does_ao))
+
 def read_obj_to_vtx_face_tup(file) -> (list[Vertex], list[Face]):
 	import re
 	verts = list()
@@ -188,10 +249,13 @@ def read_obj_to_vtx_face_tup(file) -> (list[Vertex], list[Face]):
 		match x[0]:
 			case 'v':
 				if x[1] == ' ':
-					positions = [float(idx) for idx in re.search(r"v ([0-9\.]+) ([0-9\.]+) ([0-9\.]+)", x).groups()]
+					print(x[:-1])
+					positions = [float(idx) for idx in re.search(r"v ([0-9\.\-]+) ([0-9\.\-]+) ([0-9\.\-]+)", x).groups()]
 					verts.append(Vertex(positions[0], positions[1], positions[2], 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+
 			case 'f':
-				indexes = [int(idx) for idx in re.search(r"f (\d)/.*/.* (\d)/.*/.* (\d)/.*/.*", x).groups()]
+				print(x)
+				indexes = [int(idx) for idx in re.search(r"f (\d).* (\d).* (\d).*", x).groups()]
 				faces.append(Face(*indexes))
 
 	return (verts, faces)
@@ -204,11 +268,21 @@ if __name__ == "__main__":
 	milo_data = milo.read()
 	milo_entries = milo_data.split(b"\xAD\xDE\xAD\xDE")
 	mesh_data = milo_entries[3]
-	print(mesh_data)
 	mesh_obj = Mesh(0,0,"",False,"",0,Xfm(), Xfm(), 0, "", False, "", 0, True, Sphere(0,0,0,0), 0.0, "", "", 0, 0, False, 0, True, 0, 0, [], 0, [], 0, [], 0, [], True, True)
 	_tmpf = tf.TemporaryFile("r+b")
 	_tmpf.write(mesh_data)
 	_tmpf.seek(0)
 	mesh_obj.read(_tmpf)
 	left = _tmpf.read()
-	print(len(left))
+	assert len(left) == 0
+	mesh_obj.verts, mesh_obj.faces = read_obj_to_vtx_face_tup(open("test.obj", "rt"))
+	outfile = open("out.milo_ps3", "wb")
+	outfile.write(milo_entries[0]) # ChunkStream + DirLoader sludge
+	outfile.write(b"\xAD\xDE\xAD\xDE")
+	outfile.write(milo_entries[1]) # Tex
+	outfile.write(b"\xAD\xDE\xAD\xDE")
+	outfile.write(milo_entries[2]) # Mat
+	outfile.write(b"\xAD\xDE\xAD\xDE")
+	mesh_obj.write(outfile)
+	outfile.write(b"\xAD\xDE\xAD\xDE")
+	print("done! enjoy the funny mesh")
