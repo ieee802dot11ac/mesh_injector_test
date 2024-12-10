@@ -1,0 +1,19 @@
+{new ObjectDir free_meshes.dir}
+{set_this free_meshes.dir}
+{new Tex test.tex}
+{test.tex set optimize_for_ps3 true}
+{test.tex set_bitmap "test.png_ps3"}
+{new Mat test.mat}
+{test.mat set color {1.0 1.0 1.0 1.0}}
+{test.mat set blend 0}
+{test.mat set z_mode 1}
+{test.mat set tex_gen 0}
+{test.mat set tex_wrap 1}
+{test.mat set diffuse_tex test.tex}
+{new Mesh test.mesh}
+{test.mesh set_showing true}
+{test.mesh set mat test.mat}
+{test.mesh set num_verts 4}
+{test.mesh set num_faces 2}
+{test.mesh set_local_scale 1 1 1}
+{$this save_objects "GD:/dev_hdd0/game/BLUS30463/USRDIR/test.milo_ps3"}
